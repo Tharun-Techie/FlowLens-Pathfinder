@@ -373,6 +373,17 @@ export default function App() {
     setIsMock(false);
   };
 
+  // Selection handlers
+  const handleSelectNode = (node) => {
+    setSelectedNode(node);
+    setSelectedLink(null);
+  };
+
+  const handleSelectLink = (link) => {
+    setSelectedLink(link);
+    setSelectedNode(null);
+  };
+
   // Form submit handler
   const handleSearchSubmit = (e) => {
     e.preventDefault();
