@@ -55,6 +55,8 @@ export default function App() {
   // Selections
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedLink, setSelectedLink] = useState(null);
+  const [nodeDetails, setNodeDetails] = useState({});
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   
   // UI states
   const [isLoading, setIsLoading] = useState(false);
@@ -171,6 +173,10 @@ export default function App() {
 
       setAllTransactions(reconstructedTxs);
       setQueriedAddresses(newTargets);
+      setNodeDetails(prev => ({
+        ...prev,
+        [cleanAddr]: data.analysis
+      }));
       updateGraphFromTransactions(reconstructedTxs, newTargets);
       
       // Auto-select the main node
@@ -224,6 +230,23 @@ export default function App() {
 
       setAllTransactions(mockTxs);
       setQueriedAddresses([cleanAddr]);
+      const offlineResult = buildGraphAndMetrics(mockTxs, [cleanAddr]);
+      setNodeDetails(prev => ({
+        ...prev,
+        [cleanAddr]: {
+          address: cleanAddr,
+          alias: "Target Wallet (Offline Mock)",
+          total_sent: offlineResult.metrics.totalSent,
+          total_received: offlineResult.metrics.totalReceived,
+          net_flow: offlineResult.metrics.netFlow,
+          tx_count: offlineResult.metrics.txCount,
+          active_tokens: offlineResult.metrics.activeTokens,
+          max_sent: offlineResult.metrics.maxSentTx,
+          max_received: offlineResult.metrics.maxReceivedTx,
+          most_frequent_counterparty: offlineResult.metrics.mostFrequentCounterparty,
+          largest_volume_counterparty: offlineResult.metrics.largestVolumeCounterparty
+        }
+      }));
       updateGraphFromTransactions(mockTxs, [cleanAddr]);
     } finally {
       setIsLoading(false);
@@ -278,6 +301,10 @@ export default function App() {
       
       setAllTransactions(uniqueTxs);
       setQueriedAddresses(updatedTargets);
+      setNodeDetails(prev => ({
+        ...prev,
+        [cleanAddr]: data.analysis
+      }));
       updateGraphFromTransactions(uniqueTxs, updatedTargets);
 
     } catch (err) {
@@ -329,6 +356,23 @@ export default function App() {
       
       setAllTransactions(uniqueTxs);
       setQueriedAddresses(updatedTargets);
+      const offlineResult = buildGraphAndMetrics(uniqueTxs, updatedTargets);
+      setNodeDetails(prev => ({
+        ...prev,
+        [cleanAddr]: {
+          address: cleanAddr,
+          alias: parentAlias || "Expanded Wallet (Offline Mock)",
+          total_sent: offlineResult.metrics.totalSent,
+          total_received: offlineResult.metrics.totalReceived,
+          net_flow: offlineResult.metrics.netFlow,
+          tx_count: offlineResult.metrics.txCount,
+          active_tokens: offlineResult.metrics.activeTokens,
+          max_sent: offlineResult.metrics.maxSentTx,
+          max_received: offlineResult.metrics.maxReceivedTx,
+          most_frequent_counterparty: offlineResult.metrics.mostFrequentCounterparty,
+          largest_volume_counterparty: offlineResult.metrics.largestVolumeCounterparty
+        }
+      }));
       updateGraphFromTransactions(uniqueTxs, updatedTargets);
     } finally {
       setIsLoading(false);
@@ -368,15 +412,77 @@ export default function App() {
     setTimeline([]);
     setSelectedNode(null);
     setSelectedLink(null);
+    setNodeDetails({});
     setError(null);
     setWarningMsg('');
     setIsMock(false);
   };
 
   // Selection handlers
-  const handleSelectNode = (node) => {
+  const handleSelectNode = async (node) => {
     setSelectedNode(node);
     setSelectedLink(null);
+
+    if (node && !nodeDetails[node.id]) {
+      setIsLoadingDetails(true);
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/txs?address=${node.id}&limit=50&max_pages=5`);
+        if (response.ok) {
+          const data = await response.json();
+          setNodeDetails(prev => ({
+            ...prev,
+            [node.id]: data.analysis
+          }));
+        } else {
+          const localTxs = allTransactions.filter(tx => 
+            tx.from.toLowerCase() === node.id.toLowerCase() || 
+            tx.to.toLowerCase() === node.id.toLowerCase()
+          );
+          const localRes = buildGraphAndMetrics(localTxs, [node.id]);
+          setNodeDetails(prev => ({
+            ...prev,
+            [node.id]: {
+              address: node.id,
+              alias: node.alias || "Local Node",
+              total_sent: localRes.metrics.totalSent,
+              total_received: localRes.metrics.totalReceived,
+              net_flow: localRes.metrics.netFlow,
+              tx_count: localRes.metrics.txCount,
+              active_tokens: localRes.metrics.activeTokens,
+              max_sent: localRes.metrics.maxSentTx,
+              max_received: localRes.metrics.maxReceivedTx,
+              most_frequent_counterparty: localRes.metrics.mostFrequentCounterparty,
+              largest_volume_counterparty: localRes.metrics.largestVolumeCounterparty
+            }
+          }));
+        }
+      } catch (err) {
+        console.error("Failed to fetch node details:", err);
+        const localTxs = allTransactions.filter(tx => 
+          tx.from.toLowerCase() === node.id.toLowerCase() || 
+          tx.to.toLowerCase() === node.id.toLowerCase()
+        );
+        const localRes = buildGraphAndMetrics(localTxs, [node.id]);
+        setNodeDetails(prev => ({
+          ...prev,
+          [node.id]: {
+            address: node.id,
+            alias: node.alias || "Local Node",
+            total_sent: localRes.metrics.totalSent,
+            total_received: localRes.metrics.totalReceived,
+            net_flow: localRes.metrics.netFlow,
+            tx_count: localRes.metrics.txCount,
+            active_tokens: localRes.metrics.activeTokens,
+            max_sent: localRes.metrics.maxSentTx,
+            max_received: localRes.metrics.maxReceivedTx,
+            most_frequent_counterparty: localRes.metrics.mostFrequentCounterparty,
+            largest_volume_counterparty: localRes.metrics.largestVolumeCounterparty
+          }
+        }));
+      } finally {
+        setIsLoadingDetails(false);
+      }
+    }
   };
 
   const handleSelectLink = (link) => {
@@ -402,6 +508,15 @@ export default function App() {
       return `${(val / 1000).toFixed(2)}k USDT`;
     }
     return `${val.toFixed(2)} USDT`;
+  };
+
+  const formatUSDTFull = (val) => {
+    if (val === undefined || val === null) return '0.00 USDT';
+    const formatted = Number(val).toLocaleString('en-US', { 
+      minimumFractionDigits: 2, 
+      maximumFractionDigits: 6 
+    });
+    return `${formatted} USDT`;
   };
 
   const hasData = graphData.nodes.length > 0;
@@ -657,23 +772,61 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="metric-card">
-                <span className="metric-label">USDT Flow Received</span>
-                <span className="metric-value received">+{formatUSDT(selectedNode.totalReceived)}</span>
-              </div>
+              {isLoadingDetails && !nodeDetails[selectedNode.id] ? (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '20px',
+                  gap: '10px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '6px'
+                }}>
+                  <RefreshCw className="spinner" size={24} style={{ animation: 'spin 1.5s linear infinite', color: 'var(--accent-teal)' }} />
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Querying Tokenview API...</span>
+                </div>
+              ) : (() => {
+                const details = nodeDetails[selectedNode.id] || {
+                  total_received: selectedNode.totalReceived,
+                  total_sent: selectedNode.totalSent,
+                  net_flow: selectedNode.totalReceived - selectedNode.totalSent,
+                  tx_count: selectedNode.txCount
+                };
+                return (
+                  <>
+                    <div className="metric-card">
+                      <span className="metric-label">Chain</span>
+                      <span className="metric-value" style={{ fontSize: '15px', color: 'var(--accent-teal)' }}>TRX</span>
+                    </div>
 
-              <div className="metric-card">
-                <span className="metric-label">USDT Flow Sent</span>
-                <span className="metric-value sent">-{formatUSDT(selectedNode.totalSent)}</span>
-              </div>
+                    <div className="metric-card">
+                      <span className="metric-label">Transactions</span>
+                      <span className="metric-value" style={{ fontSize: '15px' }}>
+                        {details.tx_count ? details.tx_count.toLocaleString() : '0'}
+                      </span>
+                    </div>
 
-              <div className="metric-card">
-                <span className="metric-label">Net Balance Flow</span>
-                <span className={`metric-value ${selectedNode.totalReceived - selectedNode.totalSent >= 0 ? 'received' : 'sent'}`}>
-                  {selectedNode.totalReceived - selectedNode.totalSent >= 0 ? '+' : ''}
-                  {formatUSDT(selectedNode.totalReceived - selectedNode.totalSent)}
-                </span>
-              </div>
+                    <div className="metric-card">
+                      <span className="metric-label">Total Received</span>
+                      <span className="metric-value received">+{formatUSDTFull(details.total_received)}</span>
+                    </div>
+
+                    <div className="metric-card">
+                      <span className="metric-label">Total Sent</span>
+                      <span className="metric-value sent">-{formatUSDTFull(details.total_sent)}</span>
+                    </div>
+
+                    <div className="metric-card">
+                      <span className="metric-label">Balance</span>
+                      <span className={`metric-value ${details.net_flow >= 0 ? 'received' : 'sent'}`}>
+                        {formatUSDTFull(details.net_flow)}
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Actions panel */}
               <div className="sidebar-section" style={{ marginTop: '10px', gap: '8px' }}>
