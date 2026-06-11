@@ -150,61 +150,7 @@ export default function App() {
       // Re-run builder with the queried address as the center
       const newTargets = [cleanAddr];
       
-      // Flatten transactions: backend returns transaction array under different keys depending on mock/live
-      const newTxs = data.graph ? (
-        // Re-calculate based on returned analysis to ensure JS logic matches
-        // But backend sends the txs list in analysis.timeline or we can fetch them
-        // Actually, let's verify if main.py returned the transactions:
-        // Wait, main.py returned:
-        // { analysis: { ... }, graph: { nodes, links } }
-        // Wait! Let's check: did main.py include raw transactions list in the response?
-        // Ah! In main.py:
-        // 'analyze_transactions' returned nodes and links, but it did NOT directly attach the raw transaction list inside analysis, EXCEPT in sorting/timeline or link details.
-        // Wait, we can get the transactions from the links detail!
-        // But in main.py:
-        // If we fetch, we have: `r.json()["data"]["txs"]` before it calls `analyze_transactions`.
-        // Let's check: in `main.py` lines 384-386:
-        // `analysis_res = analyze_transactions(address, txs)`
-        // `analysis_res["is_mock"] = False`
-        // `return analysis_res`
-        // It returns `analysis_res` which contains `analysis` (summary stats) and `graph` (nodes & links).
-        // It does NOT return the raw `txs`!
-        // Wait, does it?
-        // Let's check what `analyze_transactions` returns:
-        // ```python
-        // return {
-        //     "analysis": analysis,
-        //     "graph": {
-        //         "nodes": nodes,
-        //         "links": links
-        //     }
-        // }
-        // ```
-        // Yes, it returns analysis and graph. But wait! The graph has links, and each link has:
-        // `links_dict[link_key]["txs"].append({ "txid": txid, "value": val, "time": time_stamp, "block": tx.get("block_no", 0) })`
-        // So we can extract the transactions list from the links, or we can update `main.py` to return the raw transactions list!
-        // Actually, since the link contains all individual transactions, we can reconstruct the transaction list by flattening the links' txs!
-        // Let's see: `link.txs` contains `{ txid, value, time, block }`.
-        // Each transaction has `from = link.source` and `to = link.target`.
-        // This is perfect! We can easily reconstruct the raw transaction list in the frontend:
-        // ```javascript
-        // const txs = [];
-        // data.graph.links.forEach(link => {
-        //   link.txs.forEach(t => {
-        //     txs.push({
-        //       txid: t.txid,
-        //       from: link.source,
-        //       to: link.target,
-        //       value: (t.value * Math.pow(10, 6)).toString(), // convert back to raw for formatValue
-        //       time: t.time,
-        //       block_no: t.block,
-        //       token: link.token
-        //     });
-        //   });
-        // });
-        // ```
-        // This is brilliant and fully reconstructs the transaction ledger!
-      ) : [];
+
       
       const reconstructedTxs = [];
       data.graph.links.forEach(link => {
